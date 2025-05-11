@@ -15,11 +15,15 @@ if "authenticated" not in st.session_state:
 if "password_input" not in st.session_state:
     st.session_state.password_input = ""
 
-# --- Session State for Navigation & Submission ---
+# --- Session State for Navigation ---
 if "row_index" not in st.session_state:
     st.session_state.row_index = 0
 if "feedback_submitted" not in st.session_state:
     st.session_state.feedback_submitted = False
+if "feedback_text" not in st.session_state:
+    st.session_state.feedback_text = ""
+if "score_value" not in st.session_state:
+    st.session_state.score_value = 5
 
 # --- UI Title ---
 st.title("Interview Question Marker")
@@ -50,9 +54,9 @@ client = gspread.authorize(creds)
 source_sheet = client.open_by_key(st.secrets["AnswerSheet_ID"]).sheet1
 feedback_sheet = client.open_by_key(st.secrets["FeedbackSheet_ID"]).sheet1
 
-# --- Load Answers ---
-data = source_sheet.get_all_records()
-answer_col = "AnswerText"  # Adjust if needed
+# --- Load Answers and Feedback ---
+answers = source_sheet.get_all_records()
+feedback_records = feedback_sheet.get_all_records()
 
 # --- Consultant Name ---
 consultant_name = st.text_input("Consultant Name")
@@ -60,38 +64,66 @@ if not consultant_name:
     st.warning("Please enter your name to begin reviewing answers.")
     st.stop()
 
-# --- Display Current Answer ---
-if st.session_state.row_index < len(data):
-    row = data[st.session_state.row_index]
-    st.subheader(f"Answer #{st.session_state.row_index + 1}")
-    st.markdown("**Student Answer:**")
-    st.write(row.get(answer_col, "No answer found."))
+# --- Track Progress ---
+reviewed_indices = {f["AnswerIndex"] for f in feedback_records if f["ConsultantName"] == consultant_name}
+unreviewed = [i for i in range(len(answers)) if (i + 1) not in reviewed_indices]
 
-    st.markdown("**GPT Feedback:**")
-    st.info(row.get("GPTFeedback", "No GPT feedback available."))
+# --- Handle All Reviewed ---
+if not unreviewed:
+    st.success("🎉 You have reviewed all available answers.")
+    st.stop()
 
-    feedback = st.text_area("Your Feedback")
-    score = st.slider("Score (0–10)", 0, 10, 5)
+# --- Initialize index to first unreviewed if out of bounds ---
+if st.session_state.row_index not in unreviewed:
+    st.session_state.row_index = unreviewed[0]
 
-    if not st.session_state.feedback_submitted:
-        if st.button("Submit Feedback"):
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            feedback_sheet.append_row([
-                timestamp,
-                st.session_state.row_index + 1,
-                consultant_name,
-                row.get(answer_col, ""),
-                row.get("GPTFeedback", ""),
-                feedback,
-                score
-            ])
-            st.session_state.feedback_submitted = True
-            st.success("Feedback saved!")
+row = answers[st.session_state.row_index]
 
+# --- Display Progress and Question ---
+st.subheader(f"Answer {st.session_state.row_index + 1} of {len(answers)}")
+st.markdown("**Student Answer:**")
+st.write(row.get("AnswerText", "No answer found."))
+
+# --- Feedback Input Fields ---
+feedback = st.text_area("Your Feedback", value=st.session_state.feedback_text, key="feedback_text")
+score = st.slider("Score (0–10)", 0, 10, st.session_state.score_value, key="score_value")
+
+# --- Submit Feedback ---
+if not st.session_state.feedback_submitted:
+    if st.button("Submit Feedback"):
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        feedback_sheet.append_row([
+            timestamp,
+            st.session_state.row_index + 1,
+            consultant_name,
+            row.get("AnswerText", ""),
+            row.get("GPTFeedback", ""),  # still saved but not displayed
+            feedback,
+            score
+        ])
+        st.success("Feedback saved!")
+        st.session_state.feedback_submitted = True
+
+# --- Navigation Buttons ---
+col1, col2 = st.columns(2)
+
+with col1:
+    if st.button("Previous Answer"):
+        current_unreviewed_index = unreviewed.index(st.session_state.row_index)
+        if current_unreviewed_index > 0:
+            st.session_state.row_index = unreviewed[current_unreviewed_index - 1]
+            st.session_state.feedback_text = ""
+            st.session_state.score_value = 5
+            st.session_state.feedback_submitted = False
+
+with col2:
     if st.session_state.feedback_submitted:
         if st.button("Next Answer"):
-            st.session_state.row_index += 1
-            st.session_state.feedback_submitted = False
-            st.experimental_rerun()
-else:
-    st.success("All answers have been reviewed!")
+            current_unreviewed_index = unreviewed.index(st.session_state.row_index)
+            if current_unreviewed_index + 1 < len(unreviewed):
+                st.session_state.row_index = unreviewed[current_unreviewed_index + 1]
+                st.session_state.feedback_text = ""
+                st.session_state.score_value = 5
+                st.session_state.feedback_submitted = False
+            else:
+                st.success("You have completed all reviews!")
