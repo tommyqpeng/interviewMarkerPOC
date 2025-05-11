@@ -16,8 +16,6 @@ if "password_input" not in st.session_state:
     st.session_state.password_input = ""
 if "row_index" not in st.session_state:
     st.session_state.row_index = 0
-if "feedback_submitted" not in st.session_state:
-    st.session_state.feedback_submitted = False
 
 # --- UI Title ---
 st.title("Interview Question Marker")
@@ -68,41 +66,47 @@ row = answers[st.session_state.row_index]
 # --- Get previous feedback if exists ---
 existing = [
     fb for fb in feedback_records
-    if fb["AnswerIndex"] == st.session_state.row_index + 1 and fb["ConsultantName"] == consultant_name
+    if fb.get("AnswerIndex") == st.session_state.row_index + 1 and fb.get("ConsultantName") == consultant_name
 ]
-prior_feedback = existing[-1]["ManualFeedback"] if existing else ""
-prior_score = int(existing[-1]["Score"]) if existing else 5
+prior_feedback = existing[-1].get("ManualFeedback", "") if existing else ""
+prior_score = int(existing[-1].get("Score", 5)) if existing else 5
 
-# --- Inputs with prior state ---
-if "feedback_text" not in st.session_state or not st.session_state.feedback_submitted:
-    st.session_state.feedback_text = prior_feedback
-if "score_value" not in st.session_state or not st.session_state.feedback_submitted:
-    st.session_state.score_value = prior_score
+# --- Inputs ---
+feedback = st.text_area("Your Feedback", value=prior_feedback, key="feedback_text")
+score = st.slider("Score (0–10)", 0, 10, prior_score, key="score_value")
 
 # --- Display Content ---
 st.subheader(f"Answer {st.session_state.row_index + 1} of {len(answers)}")
 st.markdown("**Student Answer:**")
 st.write(row.get("AnswerText", "No answer found."))
 
-# --- Input Fields ---
-feedback = st.text_area("Your Feedback", value=st.session_state.feedback_text, key="feedback_text")
-score = st.slider("Score (0–10)", 0, 10, st.session_state.score_value, key="score_value")
+# --- Save or Replace Feedback ---
+def save_feedback():
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    answer_index = st.session_state.row_index + 1
+    headers = feedback_sheet.row_values(1)
 
-# --- Submit ---
-if not st.session_state.feedback_submitted:
-    if st.button("Submit Feedback"):
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        feedback_sheet.append_row([
-            timestamp,
-            st.session_state.row_index + 1,
-            consultant_name,
-            row.get("AnswerText", ""),
-            row.get("GPTFeedback", ""),
-            feedback,
-            score
-        ])
-        st.success("✅ Feedback saved!")
-        st.session_state.feedback_submitted = True
+    # Look for existing row to replace
+    match_row = None
+    for i, fb in enumerate(feedback_records):
+        if fb.get("AnswerIndex") == answer_index and fb.get("ConsultantName") == consultant_name:
+            match_row = i + 2  # +2 for 1-based index + header row
+            break
+
+    values = [
+        timestamp,
+        answer_index,
+        consultant_name,
+        row.get("AnswerText", ""),
+        row.get("GPTFeedback", ""),
+        feedback,
+        score
+    ]
+
+    if match_row:
+        feedback_sheet.update(f"A{match_row}:G{match_row}", [values])
+    else:
+        feedback_sheet.append_row(values)
 
 # --- Navigation ---
 col1, col2 = st.columns(2)
@@ -110,16 +114,10 @@ col1, col2 = st.columns(2)
 with col1:
     if st.button("⬅️ Previous Answer"):
         if st.session_state.row_index > 0:
-            st.session_state.update({
-                "row_index": st.session_state.row_index - 1,
-                "feedback_submitted": False
-            })
+            save_feedback()
+            st.session_state.row_index -= 1
 
 with col2:
-    if st.button("➡️ Next Answer"):
-        if st.session_state.row_index + 1 < len(answers):
-            st.session_state.update({
-                "row_index": st.session_state.row_index + 1,
-                "feedback_submitted": False
-            })
-
+    if st.button("➡️ Next Answer (Submit)"):
+        save_feedback()
+        st.session_state.row_index += 1
