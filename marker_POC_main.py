@@ -70,7 +70,7 @@ existing = [
     fb for fb in feedback_records
     if fb["AnswerIndex"] == st.session_state.row_index + 1 and fb["ConsultantName"] == consultant_name
 ]
-prior_feedback = existing[-1]["Feedback"] if existing else ""
+prior_feedback = existing[-1]["ManualFeedback"] if existing else ""
 prior_score = int(existing[-1]["Score"]) if existing else 5
 
 # --- Inputs with prior state ---
