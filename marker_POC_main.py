@@ -12,6 +12,14 @@ if "password_attempts" not in st.session_state:
     st.session_state.password_attempts = 0
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
+if "password_input" not in st.session_state:
+    st.session_state.password_input = ""
+
+# --- Session State for Navigation & Submission ---
+if "row_index" not in st.session_state:
+    st.session_state.row_index = 0
+if "feedback_submitted" not in st.session_state:
+    st.session_state.feedback_submitted = False
 
 # --- UI Title ---
 st.title("Interview Question Marker")
@@ -20,10 +28,6 @@ st.title("Interview Question Marker")
 if st.session_state.password_attempts >= 3:
     st.error("Too many incorrect attempts. Please reload the page to try again.")
     st.stop()
-
-# Persist password input across reruns
-if "password_input" not in st.session_state:
-    st.session_state.password_input = ""
 
 if not st.session_state.authenticated:
     st.session_state.password_input = st.text_input("Enter access password", type="password")
@@ -48,11 +52,7 @@ feedback_sheet = client.open_by_key(st.secrets["FeedbackSheet_ID"]).sheet1
 
 # --- Load Answers ---
 data = source_sheet.get_all_records()
-answer_col = "AnswerText"  # Change if needed
-
-# --- Session state for navigation ---
-if "row_index" not in st.session_state:
-    st.session_state.row_index = 0
+answer_col = "AnswerText"  # Adjust if needed
 
 # --- Consultant Name ---
 consultant_name = st.text_input("Consultant Name")
@@ -60,31 +60,38 @@ if not consultant_name:
     st.warning("Please enter your name to begin reviewing answers.")
     st.stop()
 
-# --- Display Answer and Form ---
+# --- Display Current Answer ---
 if st.session_state.row_index < len(data):
     row = data[st.session_state.row_index]
     st.subheader(f"Answer #{st.session_state.row_index + 1}")
-    st.write(row[answer_col])
+    st.markdown("**Student Answer:**")
+    st.write(row.get(answer_col, "No answer found."))
+
+    st.markdown("**GPT Feedback:**")
+    st.info(row.get("GPTFeedback", "No GPT feedback available."))
 
     feedback = st.text_area("Your Feedback")
     score = st.slider("Score (0–10)", 0, 10, 5)
 
-    if st.button("Submit Feedback"):
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        feedback_sheet.append_row([
-            timestamp,
-            st.session_state.row_index + 1,
-            consultant_name,
-            row.get("GPTFeedback", ""),
-            row.get(answer_col, ""),
-            feedback,
-            score
-        ])
-        st.success("Feedback saved!")
+    if not st.session_state.feedback_submitted:
+        if st.button("Submit Feedback"):
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            feedback_sheet.append_row([
+                timestamp,
+                st.session_state.row_index + 1,
+                consultant_name,
+                row.get(answer_col, ""),
+                row.get("GPTFeedback", ""),
+                feedback,
+                score
+            ])
+            st.session_state.feedback_submitted = True
+            st.success("Feedback saved!")
 
-    if st.button("Next Answer"):
-        st.session_state.row_index += 1
-        st.experimental_rerun()
+    if st.session_state.feedback_submitted:
+        if st.button("Next Answer"):
+            st.session_state.row_index += 1
+            st.session_state.feedback_submitted = False
+            st.experimental_rerun()
 else:
     st.success("All answers have been reviewed!")
-
