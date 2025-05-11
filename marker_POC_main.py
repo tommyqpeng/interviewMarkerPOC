@@ -75,6 +75,7 @@ if st.session_state.row_index < len(data):
             timestamp,
             st.session_state.row_index + 1,
             consultant_name,
+            row.get("GPTFeedback", ""),
             row.get(answer_col, ""),
             feedback,
             score
